@@ -1,5 +1,6 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
+#define MAX_CMD_LENGTH 100
 
 #include "threads/thread.h"
 

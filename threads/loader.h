@@ -31,6 +31,7 @@
 #define SEL_KDSEG       0x10    /* Kernel data selector. */
 
 #ifndef __ASSEMBLER__
+
 #include <stdint.h>
 
 /* Amount of physical memory, in 4 kB pages. */
