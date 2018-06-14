@@ -86,7 +86,7 @@ start_process(void *file_name_) {
    does nothing. */
 int
 process_wait(tid_t child_tid UNUSED) {
-    timer_msleep(50000);
+    timer_msleep(30000);
     return -1;
 }
 
@@ -217,7 +217,7 @@ load(const char *file_name, void (**eip)(void), void **esp) {
     process_activate();
 
     char *cmd = malloc(strlen(file_name) + 1);
-    strlcpy(cmd, file_name, strlen(file_name));
+    strlcpy(cmd, file_name, strlen(file_name) + 1);
     char *save_ptr;
     cmd = strtok_r(cmd, " ", &save_ptr);
 
@@ -448,8 +448,6 @@ setup_stack(void **esp, char *file_name) {
         // Push and copy
         *esp -= (strlen(token) + 1);
         memcpy(*esp, token, strlen(token) + 1);
-        hex_dump(*esp,*esp,PHYS_BASE-(*esp),true);
-        printf("\n");
         argv[i] = *esp;
     }
 
