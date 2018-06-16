@@ -15,10 +15,11 @@
 #include "threads/vaddr.h"
 #include "devices/timer.h"
 #include "threads/malloc.h"
+#include "syscall.h"
 
 static thread_func start_process NO_RETURN;
 
-static bool load(const char *cmdline, void (**eip)(void), void **esp);
+static bool load(const char *file_name, void (**eip)(void), void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -86,7 +87,9 @@ start_process(void *file_name_) {
    does nothing. */
 int
 process_wait(tid_t child_tid UNUSED) {
-    timer_msleep(30000);
+    while(!thread_current()->dead) {
+//        printf("%s",thread_current()->name);
+    };
     return -1;
 }
 
@@ -95,6 +98,10 @@ void
 process_exit(void) {
     struct thread *cur = thread_current();
     uint32_t *pd;
+
+    int exit_code = cur->exit_code;
+    printf("%s: exit(%d)\n",cur->name,exit_code);
+//    close_all_files(&thread_current()->files);
 
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
@@ -437,7 +444,7 @@ setup_stack(void **esp, char *file_name) {
     int argc = 0;
     int i = 0;
     char *copy = malloc(strlen(file_name) + 1);
-    strlcpy(copy, file_name, strlen(file_name));
+    strlcpy(copy, file_name, strlen(file_name) + 1);
 
     countArgc(token, copy, &save_ptr, &argc);
 
@@ -470,8 +477,7 @@ setup_stack(void **esp, char *file_name) {
     pushStack(esp, &argc);
     pushStack(esp, &zero);
 
-    hex_dump(*esp, *esp, PHYS_BASE - (*esp), true);
-
+//    hex_dump(*esp, *esp, PHYS_BASE - (*esp), true);
 
     return success;
 }
