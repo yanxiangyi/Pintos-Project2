@@ -118,29 +118,29 @@ int
 process_wait(tid_t child_tid) {
     if (child_tid == TID_ERROR){
         return -1;
-    }else{
-        // check if child_tid is in child list
-        struct list_elem *elem;
-//        timer_msleep(100000);
-//    printf("%d", child_tid);
-
-//    printf("Current thread name: %s.\n\n", thread_current()->name);
-
-    for (elem = list_begin(&thread_current()->children);
-         elem != &thread_current()->children.tail; elem = list_next(elem)) {
-        struct thread *child_thread = list_entry(elem, struct thread, child_elem);
-//        printf("Children thread name: %s.\n\n", child_thread->name);
-        thread_current()->wait_for = child_tid;
-        if (child_thread->tid == child_tid){
-//            printf("Children thread name: %s.\n\n", child_thread->name);
-
-            while(thread_current()->wait_for!=-1);
+    } else{
+        struct list_elem *e;
+        struct list *l = &thread_current()->children;
+        struct heritage *heritage=NULL;
+        for (e = list_begin (l); e != list_end (l); e = list_next (e))
+        {
+            heritage = list_entry (e, struct heritage, child_elem);
+            if(heritage->tid==child_tid){
+                if (!heritage->wait){
+                    heritage->wait = true;
+                    sema_down(&heritage->sema);
+                    break;
+                } else return -1;
+            }
         }
+        if (e == list_end(l)) return -1;
+
+        int status = heritage->exit_code;
+        list_remove(e);
+        palloc_free_page(heritage);
+
+        return status;
     }
-
-    }
-
-
 }
 
 /* Free the current process's resources. */
@@ -150,7 +150,6 @@ process_exit(void) {
     uint32_t *pd;
 
     int exit_code = cur->exit_code;
-    thread_current()->parent->wait_for = -1;
     printf("%s: exit(%d)\n", cur->name, exit_code);
 //    close_all_files(&thread_current()->files);
 
@@ -163,7 +162,7 @@ process_exit(void) {
            so that a timer interrupt can't switch back to the
            process page directory.  We must activate the base page
            directory before destroying the process's page
-           directory, or our active page directory will be one
+           directory, or our heritageive page directory will be one
            that's been freed (and cleared). */
         cur->pagedir = NULL;
         pagedir_activate(NULL);

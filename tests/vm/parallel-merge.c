@@ -34,9 +34,9 @@ init (void)
 }
 
 /* Sort each chunk of buf1 using SUBPROCESS,
-   which is expected to return EXIT_STATUS. */
+   which is expected to return exit_code. */
 static void
-sort_chunks (const char *subprocess, int exit_status)
+sort_chunks (const char *subprocess, int exit_code)
 {
   pid_t children[CHUNK_CNT];
   size_t i;
@@ -68,7 +68,7 @@ sort_chunks (const char *subprocess, int exit_status)
       char fn[128];
       int handle;
 
-      CHECK (wait (children[i]) == exit_status, "wait for child %zu", i);
+      CHECK (wait (children[i]) == exit_code, "wait for child %zu", i);
 
       /* Read chunk back from file. */
       quiet = true;
@@ -140,10 +140,10 @@ verify (void)
 }
 
 void
-parallel_merge (const char *child_name, int exit_status)
+parallel_merge (const char *child_name, int exit_code)
 {
   init ();
-  sort_chunks (child_name, exit_status);
+  sort_chunks (child_name, exit_code);
   merge ();
   verify ();
 }

@@ -5,7 +5,6 @@
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/switch.h"
-#include "threads/synch.h"
 #include "threads/vaddr.h"
 
 #ifdef USERPROG
@@ -189,7 +188,12 @@ thread_create(const char *name, int priority,
     init_thread(t, name, priority);
     tid = t->tid = allocate_tid();
 
-
+    t->pointer_heritage = palloc_get_page(PAL_ZERO);
+    t->pointer_heritage->tid = tid;
+    t->pointer_heritage->exit_code = UINT32_MAX;
+    t->pointer_heritage->wait = false;
+    sema_init(&t->pointer_heritage->sema, 0);
+    list_push_back(&thread_current()->children, &t->pointer_heritage->child_elem);
 
 
     /* Stack frame for kernel_thread(). */
@@ -293,6 +297,9 @@ thread_exit(void) {
        and schedule another process.  That process will destroy us
        when it calls thread_schedule_tail(). */
     intr_disable();
+    thread_current()->pointer_heritage->exit_code = thread_current()->exit_code;
+    sema_up(&thread_current()->pointer_heritage->sema);
+//    printf("%s: exit(%d)\n",thread_name(),thread_current()->exit_code);
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
     schedule();
@@ -451,21 +458,19 @@ init_thread(struct thread *t, const char *name, int priority) {
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
-    t->dead = false;
-    sema_init(&t->exec_sema,0);
-    if (!strcmp(name,"main"))
-        t->parent = NULL;
-    else {
-        t->parent = thread_current();
-        list_push_back(&thread_current()->children, &t->child_elem);
-    }
+    sema_init(&t->exec_sema, 0);
+
     list_init(&t->children);
     list_init(&t->files);
-    t->fd_count=2;
-    t->wait_for = 0;
+    t->exit_code = UINT32_MAX;
+    t->fd_count = 2;
 
-    t->exec_success=true;
-    
+    t->exec_success = true;
+    if (t == initial_thread)
+        t->parent = NULL;
+    else
+        t->parent = thread_current();
+
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);
     intr_set_level(old_level);
