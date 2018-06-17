@@ -131,6 +131,7 @@ process_wait(tid_t child_tid) {
 
         int status = heritage->exit_code;
         list_remove(e);
+
         palloc_free_page(heritage);
 
         return status;
@@ -148,15 +149,30 @@ process_exit(void) {
 
 
     acquire_filesys_lock();
+    file_close(thread_current()->self);
     struct list_elem *e;
+    int cnt = 0;
+//    if(!list_empty(&thread_current()->children))
+//        printf("\n\na\n\n");
     while(!list_empty(&thread_current()->files)){
+//        printf("%d\n\n\n\n\n",cnt);
+//        printf("aaaaaaaaaaaaaa\n\n\n\n\n");
         e = list_pop_front(&thread_current()->files);
         struct proc_file *f = list_entry (e, struct proc_file, elem);
         file_close(f->ptr);
         list_remove(e);
         free(f);
     }
-    file_close(thread_current()->self);
+//    if(!list_empty(&thread_current()->children))
+//        printf("\n\na\n\n");
+//    while(!list_empty(&thread_current()->children)){
+//        cnt++;
+////        printf("aaaaaaaaaaaaaa\n\n\naaaaaaaaaaaaaa\n\n");
+//        struct heritage *h = list_entry (list_pop_front(&thread_current()->children), struct heritage, child_elem);
+//        struct proc_file *f = list_entry (list_pop_front(&thread_current()->children), struct proc_file, elem);
+//        free(h);
+//        free(f);
+//    }
     release_filesys_lock();
 
     /* Destroy the current process's page directory and switch back

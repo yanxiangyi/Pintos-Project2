@@ -50,8 +50,11 @@ int process_write(int fd, const void *buffer, unsigned size) {
         return (int) size;
     } else {
         struct proc_file *fptr = list_search(&thread_current()->files, fd);
-        if (fptr == NULL)
+        if (fptr == NULL){
+            free(fptr);
             return -1;
+        }
+
         else{
             acquire_filesys_lock();
             int result = file_write(fptr->ptr, buffer, size);
@@ -70,8 +73,10 @@ int process_read(int fd, uint8_t *buffer, unsigned size) {
         return (int) size;
     } else {
         struct proc_file *fptr = list_search(&thread_current()->files, fd);
-        if (fptr == NULL)
+        if (fptr == NULL){
+            free(fptr);
             return -1;
+        }
         else {
             acquire_filesys_lock();
             int result = file_read(fptr->ptr, buffer, size);
@@ -83,9 +88,9 @@ int process_read(int fd, uint8_t *buffer, unsigned size) {
 
 struct proc_file *list_search(struct list *files, int fd) {
     struct list_elem *e;
-
+    struct proc_file *f;
     for (e = list_begin(files); e != list_end(files); e = list_next(e)) {
-        struct proc_file *f = list_entry (e, struct proc_file, elem);
+        f = list_entry (e, struct proc_file, elem);
         if (f->fd == fd) {
             return f;
         }

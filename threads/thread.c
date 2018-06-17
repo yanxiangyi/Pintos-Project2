@@ -301,11 +301,6 @@ thread_exit(void) {
        and schedule another process.  That process will destroy us
        when it calls thread_schedule_tail(). */
 
-    while(!list_empty(&thread_current()->children)){
-        struct heritage *f = list_entry (list_pop_front(&thread_current()->children), struct heritage, child_elem);
-
-        free(f);
-    }
 
     intr_disable();
     thread_current()->pointer_heritage->exit_code = thread_current()->exit_code;
