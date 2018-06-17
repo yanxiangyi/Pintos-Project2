@@ -13,9 +13,8 @@
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
-#include "devices/timer.h"
 #include "threads/malloc.h"
-#include "syscall.h"
+#include "devices/timer.h"
 
 static thread_func start_process NO_RETURN;
 
@@ -28,21 +27,38 @@ static bool load(const char *file_name, void (**eip)(void), void **esp);
 tid_t
 process_execute(const char *file_name) {
     char *fn_copy;
+    char *fn_copy2;
     tid_t tid;
 
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
     fn_copy = palloc_get_page(0);
+    fn_copy2 = palloc_get_page(0);
     if (fn_copy == NULL)
         return TID_ERROR;
+    if (fn_copy2 == NULL)
+        return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
-    char save_ptr;
-    file_name = strtok_r(file_name, " ", &save_ptr);
+    strlcpy(fn_copy2, file_name, PGSIZE);
+    char *save_ptr;
+    fn_copy2 = strtok_r(fn_copy2, " ", &save_ptr);
+
 
     /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
-    if (tid == TID_ERROR)
+    tid = thread_create(fn_copy2, PRI_DEFAULT, start_process, fn_copy);
+    palloc_free_page(fn_copy2);
+    if (tid == TID_ERROR) {
+//        printf("I'm %d f1 returning!!!!\n\n", thread_current()->tid);
         palloc_free_page(fn_copy);
+        return tid;
+    }
+
+    sema_down(&thread_current()->exec_sema);
+    if (!thread_current()->exec_success){
+//        printf("I'm %d %s f2 returning!!!!\n\n", thread_current()->tid, thread_current()->name);
+        return TID_ERROR;
+    }
+//    printf("I'm %d t returning!!!!\n\n", thread_current()->tid);
     return tid;
 }
 
@@ -60,11 +76,19 @@ start_process(void *file_name_) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
-
+//    printf("aaaaa\n\n%d", success);
     /* If load failed, quit. */
     palloc_free_page(file_name);
-    if (!success)
+    if (!success) {
+//        printf("aaaaa\n\n%s", thread_current()->name);
+        thread_current()->parent->exec_success=false;
+        sema_up(&thread_current()->parent->exec_sema);
+        thread_current()->exit_code = -1;
         thread_exit();
+    }else{
+        thread_current()->parent->exec_success=true;
+        sema_up(&thread_current()->parent->exec_sema);
+    }
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -74,6 +98,11 @@ start_process(void *file_name_) {
        and jump to it. */
     asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
     NOT_REACHED ();
+}
+
+static inline bool
+is_interior(struct list_elem *elem) {
+    return elem != NULL && elem->prev != NULL && elem->next != NULL;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -86,11 +115,32 @@ start_process(void *file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait(tid_t child_tid UNUSED) {
-    while(!thread_current()->dead) {
-//        printf("%s",thread_current()->name);
-    };
-    return -1;
+process_wait(tid_t child_tid) {
+    if (child_tid == TID_ERROR){
+        return -1;
+    }else{
+        // check if child_tid is in child list
+        struct list_elem *elem;
+//        timer_msleep(100000);
+//    printf("%d", child_tid);
+
+//    printf("Current thread name: %s.\n\n", thread_current()->name);
+
+    for (elem = list_begin(&thread_current()->children);
+         elem != &thread_current()->children.tail; elem = list_next(elem)) {
+        struct thread *child_thread = list_entry(elem, struct thread, child_elem);
+//        printf("Children thread name: %s.\n\n", child_thread->name);
+        thread_current()->wait_for = child_tid;
+        if (child_thread->tid == child_tid){
+//            printf("Children thread name: %s.\n\n", child_thread->name);
+
+            while(thread_current()->wait_for!=-1);
+        }
+    }
+
+    }
+
+
 }
 
 /* Free the current process's resources. */
@@ -100,7 +150,8 @@ process_exit(void) {
     uint32_t *pd;
 
     int exit_code = cur->exit_code;
-    printf("%s: exit(%d)\n",cur->name,exit_code);
+    thread_current()->parent->wait_for = -1;
+    printf("%s: exit(%d)\n", cur->name, exit_code);
 //    close_all_files(&thread_current()->files);
 
     /* Destroy the current process's page directory and switch back
