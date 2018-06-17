@@ -11,6 +11,7 @@
 #include "filesys/file.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
+#include "lib/string.h"
 
 static void syscall_handler(struct intr_frame *);
 
@@ -22,13 +23,6 @@ struct proc_file *list_search(struct list *files, int fd);
 
 void close_file(struct list *files, int fd);
 
-void close_all_files(struct list *files);
-
-struct proc_file {
-    struct file *ptr;
-    int fd;
-    struct list_elem elem;
-};
 
 void *check_addr(const void *vaddr) {
     if (!is_user_vaddr(vaddr)) {
@@ -58,10 +52,13 @@ int process_write(int fd, const void *buffer, unsigned size) {
         struct proc_file *fptr = list_search(&thread_current()->files, fd);
         if (fptr == NULL)
             return -1;
-        else
-            return file_write_at(fptr->ptr, buffer, size, 0);
+        else{
+            acquire_filesys_lock();
+            int result = file_write(fptr->ptr, buffer, size);
+            release_filesys_lock();
+            return result;
+        }
     }
-    return -1;
 }
 
 int process_read(int fd, uint8_t *buffer, unsigned size) {
@@ -76,7 +73,10 @@ int process_read(int fd, uint8_t *buffer, unsigned size) {
         if (fptr == NULL)
             return -1;
         else {
-            return file_read_at(fptr->ptr, buffer, size, 0);
+            acquire_filesys_lock();
+            int result = file_read(fptr->ptr, buffer, size);
+            release_filesys_lock();
+            return result;
         }
     }
 }
@@ -95,24 +95,17 @@ struct proc_file *list_search(struct list *files, int fd) {
 
 void close_file(struct list *files, int fd) {
     struct list_elem *e;
+    struct proc_file *f;
     for (e = list_begin(files); e != list_end(files); e = list_next(e)) {
-        struct proc_file *f = list_entry (e, struct proc_file, elem);
+         f = list_entry (e, struct proc_file, elem);
         if (f->fd == fd) {
             file_close(f->ptr);
             list_remove(e);
         }
     }
+    free(f);
 }
 
-//void close_all_files(struct list* files){
-//    struct list_elem *e;
-//    for (e = list_begin (files); e != list_end (files);
-//         e = list_next (e)){
-//        struct proc_file *f = list_entry (e, struct proc_file, elem);
-//        file_close(f->ptr);
-//        list_remove(e);
-//    }
-//}
 
 static void
 syscall_handler(struct intr_frame *f UNUSED) {
@@ -137,7 +130,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
         case SYS_EXEC:                   /* Start another process. */
             check_addr(p + 1);
             check_addr((void *) *(p + 1));
-            f->eax = process_execute(*(p + 1));
+            f->eax = exec_proc(*(p + 1));
             break;
 
         case SYS_WAIT:                   /* Wait for a child process to die. */
@@ -149,16 +142,26 @@ syscall_handler(struct intr_frame *f UNUSED) {
             check_addr(p + 2);
             check_addr(p + 1);
             check_addr((void *) *(p + 1));
+            acquire_filesys_lock();
             f->eax = filesys_create(*(p + 1), *(p + 2));
+            release_filesys_lock();
             break;
         case SYS_REMOVE:                 /* Delete a file. */
             check_addr(p + 1);
-            f->eax = filesys_remove(*(p + 1));
+            check_addr(*(p + 1));
+            acquire_filesys_lock();
+            if (filesys_remove(*(p + 1)) == NULL)
+                f->eax = false;
+            else
+                f->eax = true;
+            release_filesys_lock();
             break;
         case SYS_OPEN:                   /* Open a file. */
             check_addr(p + 1);
             check_addr((void *) *(p + 1));
+            acquire_filesys_lock();
             struct file *fptr = filesys_open(*(p + 1));
+            release_filesys_lock();
             if (fptr == NULL) {
                 f->eax = -1;
             } else {
@@ -172,7 +175,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             break;
         case SYS_FILESIZE:               /* Obtain a file's size. */
             check_addr(p + 1);
+            acquire_filesys_lock();
             f->eax = file_length(list_search(&thread_current()->files, *(p + 1))->ptr);
+            release_filesys_lock();
             break;
         case SYS_READ:                   /* Read from a file. */
             check_addr(p + 3);
@@ -199,15 +204,49 @@ syscall_handler(struct intr_frame *f UNUSED) {
         case SYS_SEEK:                   /* Change position in a file. */
             check_addr(p + 2);
             check_addr(p + 1);
+            acquire_filesys_lock();
+            file_seek(list_search(&thread_current()->files, *(p + 1))->ptr, *(p + 2));
+            release_filesys_lock();
             break;
         case SYS_TELL:                   /* Report current position in a file. */
             check_addr(p + 1);
+            acquire_filesys_lock();
+            f->eax = file_tell(list_search(&thread_current()->files, *(p + 1))->ptr);
+            release_filesys_lock();
             break;
         case SYS_CLOSE:                  /* Close a file. */
             check_addr(p + 1);
+            acquire_filesys_lock();
+            close_file(&thread_current()->files, *(p + 1));
+            release_filesys_lock();
             break;
 
         default:
             printf("No match\n");
+    }
+
+}
+
+int exec_proc(char *file_name)
+{
+    acquire_filesys_lock();
+    char * fn_cp = malloc (strlen(file_name)+1);
+    strlcpy(fn_cp, file_name, strlen(file_name)+1);
+
+    char * save_ptr;
+    fn_cp = strtok_r(fn_cp," ",&save_ptr);
+
+    struct file* f = filesys_open (fn_cp);
+
+    if(f==NULL)
+    {
+        release_filesys_lock();
+        return -1;
+    }
+    else
+    {
+        file_close(f);
+        release_filesys_lock();
+        return process_execute(file_name);
     }
 }

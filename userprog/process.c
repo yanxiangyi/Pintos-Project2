@@ -16,6 +16,7 @@
 #include "threads/malloc.h"
 #include "devices/timer.h"
 
+
 static thread_func start_process NO_RETURN;
 
 static bool load(const char *file_name, void (**eip)(void), void **esp);
@@ -32,33 +33,30 @@ process_execute(const char *file_name) {
 
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
-    fn_copy = palloc_get_page(0);
-    fn_copy2 = palloc_get_page(0);
+    fn_copy = malloc(strlen(file_name)+1);
+    fn_copy2 = malloc(strlen(file_name)+1);
     if (fn_copy == NULL)
         return TID_ERROR;
     if (fn_copy2 == NULL)
         return TID_ERROR;
-    strlcpy(fn_copy, file_name, PGSIZE);
-    strlcpy(fn_copy2, file_name, PGSIZE);
+    strlcpy(fn_copy, file_name, strlen(file_name)+1);
+    strlcpy(fn_copy2, file_name, strlen(file_name)+1);
     char *save_ptr;
     fn_copy2 = strtok_r(fn_copy2, " ", &save_ptr);
 
 
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create(fn_copy2, PRI_DEFAULT, start_process, fn_copy);
-    palloc_free_page(fn_copy2);
+    free(fn_copy2);
     if (tid == TID_ERROR) {
-//        printf("I'm %d f1 returning!!!!\n\n", thread_current()->tid);
-        palloc_free_page(fn_copy);
+        free(fn_copy);
         return tid;
     }
 
     sema_down(&thread_current()->exec_sema);
     if (!thread_current()->exec_success){
-//        printf("I'm %d %s f2 returning!!!!\n\n", thread_current()->tid, thread_current()->name);
         return TID_ERROR;
     }
-//    printf("I'm %d t returning!!!!\n\n", thread_current()->tid);
     return tid;
 }
 
@@ -76,19 +74,15 @@ start_process(void *file_name_) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
-//    printf("aaaaa\n\n%d", success);
     /* If load failed, quit. */
-    palloc_free_page(file_name);
+    free(file_name);
     if (!success) {
-//        printf("aaaaa\n\n%s", thread_current()->name);
         thread_current()->parent->exec_success=false;
-        sema_up(&thread_current()->parent->exec_sema);
-        thread_current()->exit_code = -1;
         thread_exit();
     }else{
         thread_current()->parent->exec_success=true;
-        sema_up(&thread_current()->parent->exec_sema);
     }
+    sema_up(&thread_current()->parent->exec_sema);
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -151,7 +145,19 @@ process_exit(void) {
 
     int exit_code = cur->exit_code;
     printf("%s: exit(%d)\n", cur->name, exit_code);
-//    close_all_files(&thread_current()->files);
+
+
+    acquire_filesys_lock();
+    struct list_elem *e;
+    while(!list_empty(&thread_current()->files)){
+        e = list_pop_front(&thread_current()->files);
+        struct proc_file *f = list_entry (e, struct proc_file, elem);
+        file_close(f->ptr);
+        list_remove(e);
+        free(f);
+    }
+    file_close(thread_current()->self);
+    release_filesys_lock();
 
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
@@ -281,7 +287,9 @@ load(const char *file_name, void (**eip)(void), void **esp) {
 
 
     /* Open executable file. */
+    acquire_filesys_lock();
     file = filesys_open(cmd);
+    free(cmd);
     if (file == NULL) {
         printf("load: %s: open failed\n", cmd);
         goto done;
@@ -360,10 +368,16 @@ load(const char *file_name, void (**eip)(void), void **esp) {
 
     success = true;
 
+    file_deny_write(file);
+
+    thread_current()->self = file;
+
+
     done:
 
     /* We arrive here whether the load is successful or not. */
-    file_close(file);
+//    file_close(file);
+    release_filesys_lock();
     return success;
 }
 
@@ -508,6 +522,9 @@ setup_stack(void **esp, char *file_name) {
         argv[i] = *esp;
     }
 
+    free(token);
+
+
     while ((int) *esp % 4 != 0) {
         *esp -= sizeof(char);
         char x = 0;
@@ -527,7 +544,8 @@ setup_stack(void **esp, char *file_name) {
     pushStack(esp, &argc);
     pushStack(esp, &zero);
 
-//    hex_dump(*esp, *esp, PHYS_BASE - (*esp), true);
+    free(copy);
+    free(argv);
 
     return success;
 }

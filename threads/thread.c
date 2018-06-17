@@ -6,10 +6,13 @@
 #include "threads/palloc.h"
 #include "threads/switch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+
+struct lock filesys_lock;
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -94,6 +97,7 @@ thread_init(void) {
     lock_init(&tid_lock);
     list_init(&ready_list);
     list_init(&all_list);
+    lock_init(&filesys_lock);
 
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();
@@ -296,10 +300,16 @@ thread_exit(void) {
     /* Remove thread from all threads list, set our status to dying,
        and schedule another process.  That process will destroy us
        when it calls thread_schedule_tail(). */
+
+    while(!list_empty(&thread_current()->children)){
+        struct heritage *f = list_entry (list_pop_front(&thread_current()->children), struct heritage, child_elem);
+
+        free(f);
+    }
+
     intr_disable();
     thread_current()->pointer_heritage->exit_code = thread_current()->exit_code;
     sema_up(&thread_current()->pointer_heritage->sema);
-//    printf("%s: exit(%d)\n",thread_name(),thread_current()->exit_code);
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
     schedule();
@@ -578,6 +588,14 @@ allocate_tid(void) {
     lock_release(&tid_lock);
 
     return tid;
+}
+
+void acquire_filesys_lock(){
+    lock_acquire(&filesys_lock);
+}
+
+void release_filesys_lock(){
+    lock_release(&filesys_lock);
 }
 
 /* Offset of `stack' member within `struct thread'.

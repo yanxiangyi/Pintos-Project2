@@ -81,6 +81,12 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 
+struct proc_file {
+    struct file *ptr;
+    int fd;
+    struct list_elem elem;
+};
+
 struct heritage {
     tid_t tid;
     int exit_code;
@@ -108,6 +114,8 @@ struct thread {
     int fd_count;
     struct semaphore exec_sema;
     bool exec_success;
+    struct file *self;
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -165,5 +173,9 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 
 int thread_get_load_avg(void);
+
+void acquire_filesys_lock();
+
+void release_filesys_lock();
 
 #endif /* threads/thread.h */
